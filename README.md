@@ -12,3 +12,9 @@ Experiments:
 - WGAN produced more stable training dynamics and slightly better image quality.
 - WGAN reduced the subjective fluctuation of generated samples.
 
+
+Experiments:
+- DCGAN: basic adversarial generation, but unstable and oscillatory
+- WGAN: improved stability with Wasserstein loss
+- WGAN-GP: best visual quality and most stable training among all GAN variants in this project
+
