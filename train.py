@@ -6,7 +6,8 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
 from models.generator import Generator
-from models.discriminator import Discriminator
+# from models.discriminator import Discriminator
+from models.discriminator import Critic
 from utils.save_images import save_generated_images
 
 
@@ -40,43 +41,96 @@ def main():
     )
 
     generator = Generator(latent_dim=latent_dim).to(device)
-    discriminator = Discriminator().to(device)
+    # discriminator = Discriminator().to(device)
+    critic = Critic().to(device)
     generator.apply(weights_init)
-    discriminator.apply(weights_init)
-    criterion = nn.BCELoss()
+    # discriminator.apply(weights_init)
+    critic.apply(weights_init)
+    # criterion = nn.BCELoss()
 
-    optimizer_g = optim.Adam(generator.parameters(), lr=lr, betas=(0.5, 0.999))
-    optimizer_d = optim.Adam(discriminator.parameters(), lr=lr, betas=(0.5, 0.999))
-
+    # optimizer_g = optim.Adam(generator.parameters(), lr=lr, betas=(0.5, 0.999))
+    # optimizer_d = optim.Adam(discriminator.parameters(), lr=lr, betas=(0.5, 0.999))
+    optimizer_g = optim.RMSprop(generator.parameters(), lr=lr)
+    optimizer_c = optim.RMSprop(critic.parameters(), lr=lr)
     fixed_noise = torch.randn(16, latent_dim, 1, 1, device=device)
+    n_critic = 5
+    # for epoch in range(epochs):
+    #     for batch_idx, (real_images, _) in enumerate(dataloader):
+    #         real_images = real_images.to(device)
+    #         batch_size_curr = real_images.size(0)
+    #
+    #         real_labels = torch.ones(batch_size_curr, device=device)
+    #         fake_labels = torch.zeros(batch_size_curr, device=device)
+    #
+    #         # train discriminator
+    #         noise = torch.randn(batch_size_curr, latent_dim, 1, 1, device=device)
+    #         fake_images = generator(noise)
+    #
+    #         d_real = discriminator(real_images)
+    #         loss_d_real = criterion(d_real, real_labels)
+    #
+    #         d_fake = discriminator(fake_images.detach())
+    #         loss_d_fake = criterion(d_fake, fake_labels)
+    #
+    #         loss_d = loss_d_real + loss_d_fake
+    #
+    #         optimizer_d.zero_grad()
+    #         loss_d.backward()
+    #         optimizer_d.step()
+    #
+    #         # train generator
+    #         output = discriminator(fake_images)
+    #         loss_g = criterion(output, real_labels)
+    #
+    #         optimizer_g.zero_grad()
+    #         loss_g.backward()
+    #         optimizer_g.step()
+    #
+    #         if batch_idx % 100 == 0:
+    #             print(
+    #                 f"Epoch [{epoch+1}/{epochs}] "
+    #                 f"Batch [{batch_idx}/{len(dataloader)}] "
+    #                 f"Loss D: {loss_d.item():.4f}, Loss G: {loss_g.item():.4f}"
+    #             )
+    #
+        # with torch.no_grad():
+        #     fake_samples = generator(fixed_noise)
+        #     save_generated_images(fake_samples, epoch + 1)
+    n_critic = 5  # 每次训练5次critic
 
     for epoch in range(epochs):
         for batch_idx, (real_images, _) in enumerate(dataloader):
+
             real_images = real_images.to(device)
             batch_size_curr = real_images.size(0)
 
-            real_labels = torch.ones(batch_size_curr, device=device)
-            fake_labels = torch.zeros(batch_size_curr, device=device)
+            # ---------------------
+            # Train Critic
+            # ---------------------
+            for _ in range(n_critic):
+                noise = torch.randn(batch_size_curr, latent_dim, 1, 1, device=device)
+                fake_images = generator(noise)
 
-            # train discriminator
+                critic_real = critic(real_images)
+                critic_fake = critic(fake_images.detach())
+
+                loss_c = -(torch.mean(critic_real) - torch.mean(critic_fake))
+
+                optimizer_c.zero_grad()
+                loss_c.backward()
+                optimizer_c.step()
+
+                # weight clipping
+                for p in critic.parameters():
+                    p.data.clamp_(-0.01, 0.01)
+
+            # ---------------------
+            # Train Generator
+            # ---------------------
             noise = torch.randn(batch_size_curr, latent_dim, 1, 1, device=device)
             fake_images = generator(noise)
 
-            d_real = discriminator(real_images)
-            loss_d_real = criterion(d_real, real_labels)
-
-            d_fake = discriminator(fake_images.detach())
-            loss_d_fake = criterion(d_fake, fake_labels)
-
-            loss_d = loss_d_real + loss_d_fake
-
-            optimizer_d.zero_grad()
-            loss_d.backward()
-            optimizer_d.step()
-
-            # train generator
-            output = discriminator(fake_images)
-            loss_g = criterion(output, real_labels)
+            loss_g = -torch.mean(critic(fake_images))
 
             optimizer_g.zero_grad()
             loss_g.backward()
@@ -84,18 +138,17 @@ def main():
 
             if batch_idx % 100 == 0:
                 print(
-                    f"Epoch [{epoch+1}/{epochs}] "
+                    f"Epoch [{epoch + 1}/{epochs}] "
                     f"Batch [{batch_idx}/{len(dataloader)}] "
-                    f"Loss D: {loss_d.item():.4f}, Loss G: {loss_g.item():.4f}"
+                    f"Loss C: {loss_c.item():.4f}, Loss G: {loss_g.item():.4f}"
                 )
-
-        with torch.no_grad():
-            fake_samples = generator(fixed_noise)
-            save_generated_images(fake_samples, epoch + 1)
+            with torch.no_grad():
+                fake_samples = generator(fixed_noise)
+                save_generated_images(fake_samples, epoch + 1)
 
     os.makedirs("checkpoints", exist_ok=True)
-    torch.save(generator.state_dict(), "checkpoints/generator.pth")
-    torch.save(discriminator.state_dict(), "checkpoints/discriminator.pth")
+    torch.save(generator.state_dict(), "checkpoints/generator_critic.pth")
+    torch.save(critic.state_dict(), "checkpoints/critic.pth")
     print("Training finished.")
 
 def weights_init(m):
