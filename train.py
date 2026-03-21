@@ -17,7 +17,7 @@ def main():
 
     latent_dim = 100
     batch_size = 128
-    epochs = 20
+    epochs = 30
     lr = 0.0002
 
     transform = transforms.Compose([
@@ -41,7 +41,8 @@ def main():
 
     generator = Generator(latent_dim=latent_dim).to(device)
     discriminator = Discriminator().to(device)
-
+    generator.apply(weights_init)
+    discriminator.apply(weights_init)
     criterion = nn.BCELoss()
 
     optimizer_g = optim.Adam(generator.parameters(), lr=lr, betas=(0.5, 0.999))
@@ -92,8 +93,19 @@ def main():
             fake_samples = generator(fixed_noise)
             save_generated_images(fake_samples, epoch + 1)
 
+    os.makedirs("checkpoints", exist_ok=True)
+    torch.save(generator.state_dict(), "checkpoints/generator.pth")
+    torch.save(discriminator.state_dict(), "checkpoints/discriminator.pth")
     print("Training finished.")
 
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find("Conv") != -1:
+        nn.init.normal_(m.weight.data, 0.0, 0.02)
+    elif classname.find("BatchNorm") != -1:
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias.data, 0)
 
 if __name__ == "__main__":
     main()
+
